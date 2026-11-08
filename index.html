@@ -83,8 +83,43 @@
             margin: 0 auto;
         }
 
-        /* 頂部錯誤提示列 */
-        #error-banner {
+        /* 頂部導航分頁列 */
+        .nav-tabs {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .nav-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 20px;
+            border-radius: 9999px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .nav-tab.active {
+            background-color: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+        }
+
+        .nav-tab.inactive {
+            background-color: #ffffff;
+            color: #475569;
+            border: 1px solid var(--border-color);
+        }
+
+        .nav-tab.inactive:hover {
+            background-color: #f8fafc;
+            color: var(--primary);
+            border-color: var(--primary);
+        }
             display: none;
             background-color: #fef2f2;
             border: 2px solid #ef4444;
@@ -401,6 +436,10 @@
         <div id="error-banner"></div>
 
         <header>
+            <div class="nav-tabs">
+                <a href="index.html" class="nav-tab active">📊 數據統計與長條圖</a>
+                <a href="map.html" class="nav-tab inactive">🗺️ 移民原鄉地理地圖</a>
+            </div>
             <h1>馬來西亞華人歷史點位探勘與視覺化</h1>
             <div class="subtitle">專案：Chinese sites in Malaysia described by Wolfgang Franke (1988)</div>
             <div style="margin-top: 6px; font-size: 0.9rem; color: #475569;">
@@ -806,11 +845,15 @@
                 let html = '';
                 Array.from(matchedSet).slice(0, 100).forEach(s => {
                     const yearInfo = s.dateISO ? `（最早銘刻年代：${s.dateISO}）` : '（年代未詳）';
+                    const hasCoord = Boolean(s.latitude && s.longitude);
                     html += `
-                        <div class="matched-item">
-                            <strong>${s.nanyangSiteId}</strong>: <span style="font-weight: 600; color: #1e3a8a;">${s.siteNameZh || '（無中文名）'}</span>
-                            <span style="color: #64748b;">${s.siteNameAlt1 ? ' / ' + s.siteNameAlt1 : ''}</span>
-                            <span style="color: #0284c7; font-size: 0.8rem;">${yearInfo}</span>
+                        <div class="matched-item" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                            <div>
+                                <strong>${s.nanyangSiteId}</strong>: <span style="font-weight: 600; color: #1e3a8a;">${s.siteNameZh || '（無中文名）'}</span>
+                                <span style="color: #64748b;">${s.siteNameAlt1 ? ' / ' + s.siteNameAlt1 : ''}</span>
+                                <span style="color: #0284c7; font-size: 0.8rem;">${yearInfo}</span>
+                            </div>
+                            ${hasCoord ? `<a href="map.html?q=${encodeURIComponent(s.siteNameZh || s.nanyangSiteId)}" style="color: #2563eb; font-size: 0.82rem; text-decoration: none; background: #eff6ff; padding: 2px 8px; border-radius: 4px; border: 1px solid #bfdbfe;">📍 地圖定位</a>` : '<span style="color: #94a3b8; font-size: 0.78rem;">（無座標）</span>'}
                         </div>
                     `;
                 });

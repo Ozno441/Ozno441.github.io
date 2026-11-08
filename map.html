@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>馬來西亞華人移民原鄉點位地圖 - Nanyang Data</title>
+
+    <!-- 函式庫狀態監聽 -->
+    <script>
+        window.libErrors = [];
+        window.addEventListener('error', function(e) {
+            if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+                const src = e.target.src || e.target.href || '未知來源';
+                window.libErrors.push({
+                    lib: src.split('/').slice(-2).join('/'),
+                    src: src,
+                    feature: getFeature(src)
+                });
+                renderLibErrors();
+            }
+        }, true);
+
+        function getFeature(src) {
+            if (src.includes('leaflet')) return '互動地圖渲染模組（無法顯示地理圖資與點位）';
+            if (src.includes('papaparse')) return 'CSV 解析模組（無法載入點位主資料）';
+            if (src.includes('opencc-js')) return '繁簡互換模組（簡繁關鍵字無法互通搜尋）';
+            return '相關功能模組';
+        }
+
+        function renderLibErrors() {
+            const banner = document.getElementById('error-banner');
+            if (!banner) return;
+            if (window.libErrors.length > 0) {
+                banner.style.display = 'block';
+                let html = '<strong>⚠️ 程式庫載入異常通知：</strong><ul style="margin: 6px 0 0 20px; padding: 0;">';
+                window.libErrors.forEach(err => {
+                    html += `<li><strong>${err.lib}</strong> 載入失敗 ➔ 受影響功能：<span style="text-decoration: underline;">${err.feature}</span></li>`;
+                });
+                html += '</ul><div style="margin-top: 6px; font-size: 0.85rem; color: #b91c1c;">請檢查網路連線或 CDN 存取權限。</div>';
+                banner.innerHTML = html;
+            }
+        }
+    </script>
+
+    <!-- Leaflet 地圖樣式與腳本（最新穩定版 1.9.4） -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- CSV 解析庫與繁簡轉換 -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse"></script>
+    <script src="https://cdn.jsdelivr.net/npm/opencc-js/dist/umd/full.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --panel-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-sub: #475569;
+            --primary: #2563eb;
+            --border: #cbd5e1;
+            --shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* 導航與資訊頭部 */
+        header {
+            background: #ffffff;
+            border-bottom: 1px solid var(--border);
+            padding: 14px 16px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+            z-index: 1000;
+        }
+
+        .header-content {
+            max-width: 1300px;
+            margin: 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h1 {
+            font-size: 1.35rem;
+            margin: 0;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-sub {
+            font-size: 0.85rem;
+            color: var(--text-sub);
+            margin-top: 3px;
+        }
+
+        .nav-tabs {
+            display: inline-flex;
+            gap: 8px;
+            background: #f1f5f9;
+            padding: 4px;
+            border-radius: 9999px;
+            border: 1px solid var(--border);
+        }
+
+        .nav-tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-decoration: none;
+            color: #475569;
+            transition: all 0.2s ease;
+        }
+
+        .nav-tab.active {
+            background: var(--primary);
+            color: #ffffff;
+            box-shadow: 0 2px 6px rgba(37,99,235,0.25);
+        }
+
+        .nav-tab:hover:not(.active) {
+            color: var(--primary);
+            background: #ffffff;
+        }
+
+        /* 錯誤警告條 */
+        #error-banner {
+            display: none;
+            background-color: #fef2f2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+            padding: 12px 18px;
+            margin: 10px 16px;
+            border-radius: 8px;
+            font-size: 0.92rem;
+            z-index: 1001;
+        }
+
+        /* 主工作區 (地圖 + 側邊資訊面板) */
+        .main-layout {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            position: relative;
+        }
+
+        @media (min-width: 860px) {
+            .main-layout {
+                flex-direction: row;
+                height: calc(100vh - 125px);
+            }
+        }
+
+        /* 地圖畫布容器 */
+        #map-container {
+            flex: 1;
+            min-height: 480px;
+            width: 100%;
+            z-index: 10;
+        }
+
+        /* 側邊篩選與圖例面板 */
+        .sidebar {
+            width: 100%;
+            background: var(--panel-bg);
+            border-top: 1px solid var(--border);
+            padding: 18px;
+            overflow-y: auto;
+            box-shadow: var(--shadow);
+            z-index: 20;
+        }
+
+        @media (min-width: 860px) {
+            .sidebar {
+                width: 380px;
+                border-top: none;
+                border-left: 1px solid var(--border);
+                max-height: 100%;
+            }
+        }
+
+        .panel-section {
+            margin-bottom: 20px;
+        }
+
+        .panel-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin: 0 0 10px 0;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* 統計指標方塊 */
+        .metric-cards {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .metric-box {
+            background: #f1f5f9;
+            padding: 10px 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .metric-box .val {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .metric-box .lab {
+            font-size: 0.75rem;
+            color: var(--text-sub);
+            margin-top: 2px;
+        }
+
+        /* 搜尋輸入列 */
+        .search-box {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+
+        .search-box input {
+            flex: 1;
+            padding: 9px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .search-box input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+        }
+
+        /* 原鄉族群篩選按鈕列 (Legend / Filter) */
+        .group-filter-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .group-filter-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #ffffff;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+
+        .group-filter-item:hover {
+            background: #f8fafc;
+            transform: translateX(2px);
+        }
+
+        .group-filter-item.active {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+
+        .group-filter-item.disabled {
+            opacity: 0.45;
+            background: #f1f5f9;
+        }
+
+        .color-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 2px rgba(0,0,0,0.4);
+            flex-shrink: 0;
+        }
+
+        .group-name {
+            font-size: 0.88rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+        }
+
+        .group-count {
+            font-size: 0.8rem;
+            background: #e2e8f0;
+            color: #334155;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: bold;
+        }
+
+        /* 快捷重置鍵 */
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 0.78rem;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: #f8fafc;
+            color: #475569;
+            cursor: pointer;
+        }
+        .btn-sm:hover {
+            background: #e2e8f0;
+        }
+
+        /* 標記彈出框自訂樣式 */
+        .leaflet-popup-content-wrapper {
+            border-radius: 10px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+            padding: 2px;
+        }
+
+        .custom-popup {
+            padding: 4px;
+            font-size: 0.88rem;
+            line-height: 1.5;
+            min-width: 200px;
+            max-width: 280px;
+        }
+
+        .custom-popup h3 {
+            margin: 0 0 6px 0;
+            font-size: 1.1rem;
+            color: #0f172a;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 4px;
+        }
+
+        .custom-popup .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: #ffffff;
+            font-size: 0.75rem;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+
+        .custom-popup .row {
+            margin-top: 4px;
+            color: #334155;
+        }
+
+        .custom-popup strong {
+            color: #0f172a;
+        }
+
+        /* 未能定位據點手風琴清單 */
+        details.unmapped-drawer {
+            margin-top: 15px;
+            background: #f8fafc;
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 0.85rem;
+        }
+
+        details.unmapped-drawer summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        .unmapped-list {
+            margin-top: 8px;
+            max-height: 150px;
+            overflow-y: auto;
+            color: #64748b;
+        }
+
+        /* 頁尾來源與授權宣告 */
+        footer {
+            background: #ffffff;
+            border-top: 1px solid var(--border);
+            padding: 14px 16px;
+            text-align: center;
+            font-size: 0.84rem;
+            color: var(--text-sub);
+            line-height: 1.6;
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <!-- 異常通報條 -->
+    <div id="error-banner"></div>
+
+    <header>
+        <div class="header-content">
+            <div>
+                <h1>🗺️ 馬來西亞華人移民原鄉點位地理圖</h1>
+                <div class="header-sub">
+                    資料集：Wolfgang Franke 傅吾康 (1988) 銘刻地點調查 ｜ 丁荷生、馬徳偉 等 (NUS, 2024) 數位化
+                </div>
+            </div>
+            <div class="header-links">
+                <div class="nav-tabs">
+                    <a href="index.html" class="nav-tab">📊 統計分析</a>
+                    <a href="map.html" class="nav-tab active">🗺️ 地圖分佈</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="main-layout">
+        <!-- 互動地圖 -->
+        <div id="map-container"></div>
+
+        <!-- 側邊篩選與原鄉資訊面板 -->
+        <div class="sidebar">
+            <div class="panel-section">
+                <div class="panel-title">
+                    <span>📊 點位統計概況</span>
+                    <span id="loading-text" style="font-size: 0.8rem; color: #0284c7; font-weight: normal;">讀取資料中...</span>
+                </div>
+                <div class="metric-cards">
+                    <div class="metric-box">
+                        <div class="val" id="total-screened-count">102</div>
+                        <div class="lab">篩選之移民同鄉據點</div>
+                    </div>
+                    <div class="metric-box">
+                        <div class="val" id="visible-marker-count" style="color: #059669;">-</div>
+                        <div class="lab">地圖標註呈現數</div>
+                    </div>
+                </div>
+
+                <!-- 搜尋過濾 -->
+                <div class="search-box">
+                    <input type="text" id="site-search-input" placeholder="🔍 搜尋廟宇/會館/地名（支援簡繁體）" oninput="applyFilters()">
+                </div>
+            </div>
+
+            <!-- 原鄉群體色票篩選面板 -->
+            <div class="panel-section">
+                <div class="panel-title">
+                    <span>🎨 原鄉移民族群分類（點擊切換）</span>
+                    <div>
+                        <button class="btn-sm" onclick="selectAllGroups(true)">全選</button>
+                        <button class="btn-sm" onclick="selectAllGroups(false)">全清</button>
+                    </div>
+                </div>
+                <div class="group-filter-list" id="group-filter-container">
+                    <!-- 動態產出原鄉色票項目 -->
+                </div>
+            </div>
+
+            <!-- 未具坐標之據點補充說明 -->
+            <details class="unmapped-drawer">
+                <summary>⚠️ 尚無法定位之 17 處同鄉組織／古墓義山</summary>
+                <div class="unmapped-list" id="unmapped-list-container">
+                    載入中...
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <footer>
+        <div>
+            圖資資料來源：<strong>Nanyang Data (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>)</strong> ｜
+            官方圖層展示：<a href="https://nanyang-data.info/" target="_blank" rel="noopener">https://nanyang-data.info/</a>
+        </div>
+        <div style="font-size: 0.78rem; margin-top: 4px;">
+            原始調查文獻：Wolfgang Franke 傅吾康、Tieh-fan Chen 陳鐵凡 (1982-87) 《馬來西亞華文銘刻彙編》
+        </div>
+    </footer>
+
+    <script>
+        // 1. 原鄉族群與顏色定義配置
+        const GEO_CONFIG = {
+            '廣東廣府系統': {
+                color: '#ef4444', // 紅色
+                keywords: ['廣東', '廣肇', '番禺', '南海', '順德', '台山', '甯陽', '寧陽', '新寧', '香山', '中山', '清遠', '東安', '四邑', '岡州'],
+                desc: '珠江三角洲及西江流域（粵語群體）'
+            },
+            '福建閩南系統': {
+                color: '#3b82f6', // 藍色
+                keywords: ['福建', '閩南', '漳州', '泉州', '漳泉', '永春', '安溪', '晉江', '興安', '興化', '詔安', '龍巖'],
+                desc: '漳泉、閩南泉漳廈及興化同鄉（福建話群體）'
+            },
+            '客家系統': {
+                color: '#10b981', // 綠色
+                keywords: ['客屬', '嘉應', '茶陽', '大埔', '惠州', '汀州', '增龍', '應和', '永定', '海陸'],
+                desc: '粵東梅縣、惠陽及閩西汀州客屬同鄉（客家話群體）'
+            },
+            '海南系統': {
+                color: '#f59e0b', // 橙黃色
+                keywords: ['瓊州', '琼州', '瓊崖'],
+                desc: '海南島瓊州府各縣同鄉（海南話群體）'
+            },
+            '潮州系統': {
+                color: '#8b5cf6', // 紫色
+                keywords: ['潮州', '八邑'],
+                desc: '潮汕平原潮州八邑同鄉（潮州話群體）'
+            },
+            '跨省與聯合群體': {
+                color: '#ec4899', // 桃粉色
+                keywords: ['兩廣', '三江'],
+                desc: '跨省同盟，如兩廣義山（粵桂聯合）、三江公塚'
+            },
+            '廣西系統': {
+                color: '#06b6d4', // 青天藍
+                keywords: ['廣西'],
+                desc: '廣西省籍移民同鄉組織'
+            },
+            '雷州系統': {
+                color: '#f97316', // 橘紅色
+                keywords: ['雷州'],
+                desc: '廣東雷州半島同鄉組織'
+            },
+            '全體華人／未指定原鄉': {
+                color: '#64748b', // 灰藍色
+                keywords: ['華僑', '中華', '華人'],
+                desc: '全體華僑公塚或未標特定省籍之義山公所'
+            }
+        };
+
+        // 第一步篩選移民團體的關鍵字
+        const STEP1_KEYWORDS = ['會館', '公所', '同鄉', '義山', '公塚', '俱樂部', '同邑', '八邑', '客屬'];
+
+        // 全域狀態變數
+        let map = null;
+        let markersLayer = null;
+        let allFilteredSites = [];
+        let activeGroups = new Set(Object.keys(GEO_CONFIG));
+        let s2tConverter = null;
+        let t2sConverter = null;
+
+        // 2. 初始化繁簡轉換
+        function initOpenCC() {
+            try {
+                if (typeof OpenCC !== 'undefined' && OpenCC.Converter) {
+                    s2tConverter = OpenCC.Converter({ from: 'cn', to: 'tw' });
+                    t2sConverter = OpenCC.Converter({ from: 'tw', to: 'cn' });
+                }
+            } catch (e) {
+                console.warn("OpenCC init failed:", e);
+            }
+        }
+
+        function textMatches(sourceText, query) {
+            if (!query) return true;
+            if (!sourceText) return false;
+            const q = query.trim().toLowerCase();
+            const s = sourceText.toLowerCase();
+            if (s.includes(q)) return true;
+
+            if (s2tConverter && t2sConverter) {
+                const qt = s2tConverter(q).toLowerCase();
+                const qs = t2sConverter(q).toLowerCase();
+                if (s.includes(qt) || s.includes(qs)) return true;
+            }
+            return false;
+        }
+
+        // 3. 原生純 JS YAML 解析器（免除 CDN 相容性問題）
+        function parseYaml(text) {
+            const lines = text.split(/\r?\n/);
+            const items = [];
+            let curr = null;
+            let currentKey = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                const raw = lines[i];
+                const trimmed = raw.trim();
+                if (!trimmed || trimmed.startsWith('#')) continue;
+
+                if (trimmed.startsWith('- nanyangSiteId:')) {
+                    if (curr) items.push(curr);
+                    const val = trimmed.replace('- nanyangSiteId:', '').trim().replace(/^['"]|['"]$/g, '');
+                    curr = { nanyangSiteId: val };
+                    currentKey = 'nanyangSiteId';
+                } else if (curr && trimmed.includes(':') && !raw.startsWith('  ') && !raw.startsWith('\t')) {
+                    const colonIdx = trimmed.indexOf(':');
+                    const k = trimmed.slice(0, colonIdx).trim();
+                    const v = trimmed.slice(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+                    curr[k] = v;
+                    currentKey = k;
+                } else if (curr && (raw.startsWith('    ') || raw.startsWith('  '))) {
+                    if (currentKey && curr[currentKey]) {
+                        curr[currentKey] += ' ' + trimmed.replace(/^['"]|['"]$/g, '');
+                    }
+                }
+            }
+            if (curr) items.push(curr);
+            return items;
+        }
+
+        // 4. 初始化 Leaflet 地圖
+        function initMap() {
+            if (typeof L === 'undefined') {
+                window.libErrors.push({
+                    lib: 'leaflet',
+                    src: 'leaflet.js',
+                    feature: '地圖渲染（未能載入 Leaflet 核心函式庫）'
+                });
+                renderLibErrors();
+                return;
+            }
+
+            // 以馬來西亞半島中心為初始視野（約北緯 3.8 度，東經 102 度）
+            map = L.map('map-container', {
+                center: [3.8, 102.2],
+                zoom: 7,
+                zoomControl: true
+            });
+
+            // 使用 OpenStreetMap 圖資底圖
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            markersLayer = L.layerGroup().addTo(map);
+        }
+
+        // 5. 判斷原鄉分類
+        function determineGroup(siteNameZh) {
+            const name = siteNameZh || '';
+            for (const [groupName, conf] of Object.entries(GEO_CONFIG)) {
+                if (conf.keywords.some(k => name.includes(k))) {
+                    return groupName;
+                }
+            }
+            return '其他/未明';
+        }
+
+        // 6. 讀取並關聯兩份資料
+        async function loadData() {
+            try {
+                const [csvRes, yamlRes] = await Promise.all([
+                    fetch('01-franke_malaysia.csv'),
+                    fetch('01-franke_malaysia.yaml')
+                ]);
+
+                if (!csvRes.ok || !yamlRes.ok) throw new Error('讀取資料檔案失敗');
+
+                const csvText = await csvRes.text();
+                const yamlText = await yamlRes.text();
+
+                // 解析 CSV
+                const csvData = Papa.parse(csvText, { header: true, skipEmptyLines: true, dynamicTyping: true }).data;
+                
+                // 解析 YAML
+                const yamlList = parseYaml(yamlText);
+                const yamlMap = {};
+                yamlList.forEach(item => {
+                    if (item.nanyangSiteId) yamlMap[item.nanyangSiteId] = item;
+                });
+
+                // 第一步：篩選移民同鄉團體/義山（STEP1_KEYWORDS）
+                allFilteredSites = [];
+                const unmappedList = [];
+
+                csvData.forEach(row => {
+                    const name = row.siteNameZh || '';
+                    if (STEP1_KEYWORDS.some(kw => name.includes(kw))) {
+                        const extra = yamlMap[row.nanyangSiteId] || {};
+                        const group = determineGroup(name);
+                        const siteObj = {
+                            ...row,
+                            FrankeNo: extra.FrankeNo || '',
+                            dateISO: extra.dateISO || '',
+                            dateRef: extra.dateRef || '',
+                            address: extra.address || '',
+                            notes: extra.notes || '',
+                            group: group
+                        };
+
+                        allFilteredSites.push(siteObj);
+
+                        if (!row.latitude || !row.longitude) {
+                            unmappedList.push(siteObj);
+                        }
+                    }
+                });
+
+                // 更新未定位抽屜清單
+                renderUnmappedList(unmappedList);
+
+                // 建立側邊原鄉圖例
+                renderGroupFilterControls();
+
+                // 檢查 URL 查詢參數（支援從 index.html 帶關鍵字或點位名過來連動）
+                const urlParams = new URLSearchParams(window.location.search);
+                const queryParam = urlParams.get('q');
+                if (queryParam) {
+                    const searchInput = document.getElementById('site-search-input');
+                    if (searchInput) searchInput.value = queryParam;
+                }
+
+                // 標註至地圖
+                applyFilters();
+
+                document.getElementById('loading-text').innerText = '✅ 資料載入完成';
+                document.getElementById('loading-text').style.color = '#15803d';
+
+            } catch (err) {
+                console.error("載入失敗:", err);
+                document.getElementById('loading-text').innerText = '❌ 載入失敗: ' + err.message;
+                document.getElementById('loading-text').style.color = '#b91c1c';
+            }
+        }
+
+        // 7. 產生地圖圓形標記圖示
+        function createColoredCircle(lat, lng, color, site) {
+            const marker = L.circleMarker([lat, lng], {
+                radius: 8,
+                fillColor: color,
+                color: '#ffffff',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.85
+            });
+
+            // 彈出視窗資訊內容
+            const dateStr = site.dateISO ? `${site.dateISO} 年` : '年代未載';
+            const addressStr = site.address ? site.address : '無詳細街道記錄';
+            const popupHtml = `
+                <div class="custom-popup">
+                    <span class="badge" style="background-color: ${color};">${site.group}</span>
+                    <h3>${site.siteNameZh || '（無中文名）'}</h3>
+                    <div class="row"><strong>羅馬拼音/外文：</strong>${site.siteNameAlt1 || '無'}</div>
+                    <div class="row"><strong>典籍編號：</strong>${site.FrankeNo || site.nanyangSiteId}</div>
+                    <div class="row"><strong>最早銘刻年代：</strong><span style="color: #2563eb; font-weight: bold;">${dateStr}</span></div>
+                    <div class="row"><strong>現今地址：</strong>${addressStr}</div>
+                    ${site.notes ? `<div class="row" style="color: #64748b; font-size: 0.8rem; margin-top: 4px;">備註：${site.notes}</div>` : ''}
+                </div>
+            `;
+            marker.bindPopup(popupHtml);
+            return marker;
+        }
+
+        // 8. 側邊族群篩選按鈕列渲染
+        function renderGroupFilterControls() {
+            const container = document.getElementById('group-filter-container');
+            container.innerHTML = '';
+
+            // 計算各族群數量
+            const groupCounts = {};
+            Object.keys(GEO_CONFIG).forEach(g => { groupCounts[g] = 0; });
+            groupCounts['其他/未明'] = 0;
+
+            allFilteredSites.forEach(s => {
+                if (groupCounts[s.group] !== undefined) groupCounts[s.group]++;
+                else groupCounts['其他/未明']++;
+            });
+
+            Object.entries(GEO_CONFIG).forEach(([groupName, conf]) => {
+                const count = groupCounts[groupName] || 0;
+                if (count === 0) return;
+
+                const item = document.createElement('div');
+                item.className = 'group-filter-item' + (activeGroups.has(groupName) ? ' active' : ' disabled');
+                item.onclick = () => toggleGroup(groupName);
+
+                item.innerHTML = `
+                    <div class="group-name">
+                        <span class="color-dot" style="background-color: ${conf.color};"></span>
+                        <span>${groupName}</span>
+                    </div>
+                    <span class="group-count">${count} 處</span>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        // 9. 切換原鄉族群顯示
+        function toggleGroup(groupName) {
+            if (activeGroups.has(groupName)) {
+                activeGroups.delete(groupName);
+            } else {
+                activeGroups.add(groupName);
+            }
+            renderGroupFilterControls();
+            applyFilters();
+        }
+
+        function selectAllGroups(enableAll) {
+            if (enableAll) {
+                activeGroups = new Set(Object.keys(GEO_CONFIG));
+                activeGroups.add('其他/未明');
+            } else {
+                activeGroups.clear();
+            }
+            renderGroupFilterControls();
+            applyFilters();
+        }
+
+        // 10. 套用搜尋與族群篩選
+        function applyFilters() {
+            if (!markersLayer) return;
+            markersLayer.clearLayers();
+
+            const query = document.getElementById('site-search-input').value.trim();
+            let visibleCount = 0;
+            const validLatLngs = [];
+
+            allFilteredSites.forEach(site => {
+                // 檢查是否在勾選的原鄉群中
+                if (!activeGroups.has(site.group)) return;
+
+                // 檢查搜尋文字（支援繁簡）
+                const searchScope = `${site.siteNameZh || ''} ${site.siteNameAlt1 || ''} ${site.address || ''} ${site.group}`;
+                if (!textMatches(searchScope, query)) return;
+
+                // 檢查是否具備經緯度
+                if (site.latitude && site.longitude) {
+                    const lat = parseFloat(site.latitude);
+                    const lon = parseFloat(site.longitude);
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        const color = (GEO_CONFIG[site.group] && GEO_CONFIG[site.group].color) || '#64748b';
+                        const marker = createColoredCircle(lat, lon, color, site);
+                        markersLayer.addLayer(marker);
+                        validLatLngs.push([lat, lon]);
+                        visibleCount++;
+                    }
+                }
+            });
+
+            document.getElementById('visible-marker-count').innerText = `${visibleCount} 處`;
+
+            // 若有篩選且有點位，可自動平移視野
+            if (validLatLngs.length > 0 && query.length > 0) {
+                const bounds = L.latLngBounds(validLatLngs);
+                map.fitBounds(bounds, { maxZoom: 12, padding: [40, 40] });
+            }
+        }
+
+        // 11. 未能定位清單渲染
+        function renderUnmappedList(unmapped) {
+            const listEl = document.getElementById('unmapped-list-container');
+            if (unmapped.length === 0) {
+                listEl.innerHTML = '無未定位之點位。';
+                return;
+            }
+            let html = '';
+            unmapped.forEach(s => {
+                html += `
+                    <div style="padding: 3px 0; border-bottom: 1px dashed #e2e8f0;">
+                        <strong>${s.nanyangSiteId}</strong>: ${s.siteNameZh || '（無中文名）'} 
+                        <span style="font-size: 0.75rem; color: #94a3b8;">(${s.group})</span>
+                    </div>
+                `;
+            });
+            listEl.innerHTML = html;
+        }
+
+        // 入口啟動
+        window.addEventListener('DOMContentLoaded', () => {
+            initOpenCC();
+            initMap();
+            loadData();
+        });
+    </script>
+</body>
+</html>
