@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>馬來西亞歷史點位分析與原鄉關鍵字探勘</title>
+
+    <!-- 函式庫狀態監控 -->
+    <script>
+        window.libErrors = [];
+        window.addEventListener('error', function(e) {
+            if (e.target && e.target.tagName === 'SCRIPT') {
+                const src = e.target.src || '未知來源腳本';
+                window.libErrors.push({
+                    lib: src.split('/').slice(-2).join('/'),
+                    src: src,
+                    feature: getFeatureName(src)
+                });
+                renderLibErrors();
+            }
+        }, true);
+
+        function getFeatureName(src) {
+            if (src.includes('chart.js')) return '互動圖表渲染（無法繪製長條圖）';
+            if (src.includes('papaparse')) return 'CSV 資料檔讀取與解析（無法載入主點位資料）';
+            if (src.includes('js-yaml')) return 'YAML 補充資料檔解析（無法獲取建置年份及地址資訊）';
+            if (src.includes('opencc-js')) return '繁簡中文即時轉換（簡體關鍵字無法自動匹配繁體資料）';
+            return '相關功能模組';
+        }
+
+        function renderLibErrors() {
+            const banner = document.getElementById('error-banner');
+            if (!banner) return;
+            if (window.libErrors.length > 0) {
+                banner.style.display = 'block';
+                let html = '<strong>⚠️ 程式庫載入異常通知：</strong><ul style="margin: 6px 0 0 20px; padding: 0;">';
+                window.libErrors.forEach(err => {
+                    html += `<li><strong>${err.lib}</strong> 載入失敗 ➔ 受影響功能：<span style="text-decoration: underline;">${err.feature}</span></li>`;
+                });
+                html += '</ul><div style="margin-top: 6px; font-size: 0.85rem; color: #b91c1c;">請檢查網路連線或 CDN 存取權限。</div>';
+                banner.innerHTML = html;
+            }
+        }
+    </script>
+
+    <!-- 引入最新版 CDN 函式庫（使用支援瀏覽器全域載入的最新發行版本） -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-yaml@5/dist/browser/js-yaml.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/opencc-js/dist/umd/full.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #f1f5f9;
+            --card-bg: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --accent: #0ea5e9;
+            --danger: #ef4444;
+            --border-color: #cbd5e1;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 16px 12px;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1060px;
+            margin: 0 auto;
+        }
+
+        /* 頂部錯誤提示列 */
+        #error-banner {
+            display: none;
+            background-color: #fef2f2;
+            border: 2px solid #ef4444;
+            color: #991b1b;
+            padding: 14px 18px;
+            border-radius: var(--radius-md);
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+        }
+
+        /* 標頭 */
+        header {
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 8px 0;
+        }
+
+        h1 {
+            font-size: 1.7rem;
+            margin: 0 0 8px 0;
+            color: #0f172a;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        /* 數據加載狀態 */
+        #loading-badge {
+            display: inline-block;
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            margin-top: 10px;
+            font-weight: 500;
+        }
+
+        /* 統計概覽小卡 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        @media (min-width: 640px) {
+            .stats-grid {
+                grid-template-columns: repeat(4, 1fr);
+                gap: 16px;
+            }
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border-radius: var(--radius-md);
+            padding: 16px 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+
+        .stat-card .num {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--primary);
+            line-height: 1.2;
+        }
+
+        .stat-card .desc {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-top: 4px;
+        }
+
+        /* 卡片共用樣式 */
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            padding: 20px 16px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+            border: 1px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+
+        @media (min-width: 640px) {
+            .card {
+                padding: 24px;
+            }
+            h1 {
+                font-size: 2.1rem;
+            }
+        }
+
+        .card h2 {
+            font-size: 1.25rem;
+            margin: 0 0 6px 0;
+            color: #1e293b;
+        }
+
+        .card p.desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin: 0 0 16px 0;
+        }
+
+        /* 圖表外框容器（適應手機捲動與縮放） */
+        .chart-wrapper {
+            position: relative;
+            width: 100%;
+            height: 320px;
+        }
+
+        @media (min-width: 768px) {
+            .chart-wrapper {
+                height: 380px;
+            }
+        }
+
+        /* 關鍵字群管理面板 */
+        .kw-section {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: var(--radius-md);
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .kw-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .kw-header h3 {
+            margin: 0;
+            font-size: 1.05rem;
+            color: #334155;
+        }
+
+        /* 輸入控制區 */
+        .input-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .input-row input {
+            flex: 1 1 160px;
+            padding: 10px 14px;
+            font-size: 0.95rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            outline: none;
+            transition: border 0.2s;
+        }
+
+        .input-row input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+        }
+
+        .btn {
+            background-color: var(--primary);
+            color: #ffffff;
+            border: none;
+            padding: 10px 18px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: #475569;
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            font-size: 0.85rem;
+        }
+
+        .btn-outline:hover {
+            background: #f1f5f9;
+            color: #0f172a;
+        }
+
+        /* 標籤徽章 (Pills) */
+        .kw-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .kw-tag {
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            color: #1e293b;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+
+        .kw-tag .count {
+            background: #e2e8f0;
+            color: #0f172a;
+            border-radius: 9999px;
+            padding: 1px 7px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .kw-tag .del-btn {
+            cursor: pointer;
+            color: #94a3b8;
+            font-weight: bold;
+            font-size: 1.1rem;
+            line-height: 1;
+            margin-left: 2px;
+        }
+
+        .kw-tag .del-btn:hover {
+            color: var(--danger);
+        }
+
+        .group-select {
+            padding: 10px 12px;
+            font-size: 0.95rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #ffffff;
+            color: #1e293b;
+        }
+
+        /* 繁簡切換提示小標 */
+        .cc-badge {
+            font-size: 0.8rem;
+            color: #059669;
+            background: #ecfdf5;
+            padding: 3px 8px;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* 底部來源 */
+        footer {
+            margin-top: 40px;
+            padding: 24px 12px;
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            font-size: 0.88rem;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+
+        footer a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* 列表預覽 */
+        .matched-preview {
+            max-height: 220px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #ffffff;
+            padding: 8px 12px;
+            margin-top: 14px;
+            font-size: 0.85rem;
+        }
+
+        .matched-item {
+            padding: 6px 0;
+            border-bottom: 1px dashed #e2e8f0;
+        }
+        .matched-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 函式庫未載入警告橫條 -->
+        <div id="error-banner"></div>
+
+        <header>
+            <h1>馬來西亞華人歷史點位探勘</h1>
+            <div class="subtitle">《馬來西亞華文銘刻彙編》數位化資料庫分析平台</div>
+            <div>
+                <span id="loading-badge">⏳ 正在載入並解析 CSV 與 YAML 檔案...</span>
+                <span id="opencc-status" class="cc-badge" style="display:none;">✨ 雙向繁簡自動轉換已就緒</span>
+            </div>
+        </header>
+
+        <!-- 數據統計小卡 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="num" id="stat-total-sites">-</div>
+                <div class="desc">總收錄點位</div>
+            </div>
+            <div class="stat-card">
+                <div class="num" id="stat-geocoded">-</div>
+                <div class="desc">具經緯度點位</div>
+            </div>
+            <div class="stat-card">
+                <div class="num" id="stat-dated">-</div>
+                <div class="desc">具年份記錄點位</div>
+            </div>
+            <div class="stat-card">
+                <div class="num" id="stat-filter-matches">-</div>
+                <div class="desc">當前符合篩選數</div>
+            </div>
+        </div>
+
+        <!-- 功能一：關鍵字群管理與長條圖（動態探勘） -->
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px;">
+                <h2 style="margin: 0;">自訂關鍵字群點位探勘（長條圖）</h2>
+                <span class="cc-badge">支援簡繁互通：輸入「廣東」或「广东」皆可精準匹配</span>
+            </div>
+            <p class="desc">
+                X 軸為您設定或選擇的關鍵字，Y 軸為符合該關鍵字的歷史點位總數。您可自由切換預設群組、新增自訂關鍵字、或刪除單項以即時觀察。
+            </p>
+
+            <div class="kw-section">
+                <div class="kw-header">
+                    <h3>📂 選擇或載入關鍵字群：</h3>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <select id="group-preset-select" class="group-select" onchange="switchKeywordPreset()">
+                            <option value="step1_orgs">移民組織類型（第一步關鍵字群）</option>
+                            <option value="step2_regions">主要祖籍原鄉群體（第二步精選群）</option>
+                            <option value="minnan_counties">福建／閩南系統各大府縣</option>
+                            <option value="guangfu_counties">廣東／廣府系統主要原鄉</option>
+                            <option value="hakka_counties">客屬各地原鄉組織</option>
+                            <option value="custom">自訂群組清單</option>
+                        </select>
+                        <button class="btn btn-outline" onclick="resetCurrentGroup()">重置預設</button>
+                    </div>
+                </div>
+
+                <!-- 新增關鍵字控制列 -->
+                <div class="input-row">
+                    <input type="text" id="new-kw-input" placeholder="輸入關鍵字（例如：天后宮、福州、潮州、義山）" onkeydown="if(event.key==='Enter') addKeyword()">
+                    <button class="btn" onclick="addKeyword()">➕ 新增關鍵字</button>
+                </div>
+
+                <!-- 關鍵字標籤池 -->
+                <div class="kw-tags" id="kw-tags-container">
+                    <!-- 動態產出 -->
+                </div>
+            </div>
+
+            <!-- 長條圖 -->
+            <div class="chart-wrapper">
+                <canvas id="keywordBarChart"></canvas>
+            </div>
+
+            <!-- 匹配結果預覽 -->
+            <details style="margin-top: 16px; cursor: pointer;">
+                <summary style="font-weight: 600; color: #334155; padding: 6px 0;">
+                    🔍 查看目前符合關鍵字的點位明細清單（共 <span id="matched-count-text">0</span> 處）
+                </summary>
+                <div class="matched-preview" id="matched-sites-list">
+                    資料讀取中...
+                </div>
+            </details>
+        </div>
+
+        <!-- 功能二：重現點位類型分佈圖 -->
+        <div class="card">
+            <h2>歷史點位類型分佈（重現分析）</h2>
+            <p class="desc">統計點位所屬之社會機構性質（神緣廟宇、血緣會館、死生義山等）。</p>
+            <div class="chart-wrapper">
+                <canvas id="typeChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 功能三：重現年代分佈圖 -->
+        <div class="card">
+            <h2>點位建立／最早銘刻年代時期（50年區間）</h2>
+            <p class="desc">統計各點位存留之最早銘文、牌匾、器物年代，重現華人大規模拓殖高峰。</p>
+            <div class="chart-wrapper">
+                <canvas id="periodChart"></canvas>
+            </div>
+        </div>
+
+        <footer>
+            <div>
+                資料來源：<strong>Nanyang Data (<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>)</strong>
+            </div>
+            <div style="margin-top: 4px; font-size: 0.82rem;">
+                文獻調查：Wolfgang Franke 傅吾康、Tieh-fan Chen 陳鐵凡 (1982–1987) ｜ 數位整理：NUS 團隊 Kenneth Dean 丁荷生、Marcus Bingenheimer 馬徳偉 等 (2024)
+            </div>
+        </footer>
+    </div>
+
+    <!-- 主應用程式邏輯 -->
+    <script>
+        // 1. 全域狀態與資料存儲
+        let rawCSV = [];
+        let rawYAML = {};
+        let mergedSites = []; // 結合 CSV 與 YAML
+
+        // Chart.js 實例保存
+        let chartKeywords = null;
+        let chartTypes = null;
+        let chartPeriods = null;
+
+        // OpenCC 轉換器 (繁簡互通)
+        let s2tConverter = null;
+        let t2sConverter = null;
+
+        // 預設關鍵字群組庫
+        const KEYWORD_PRESETS = {
+            step1_orgs: ['會館', '公所', '同鄉', '義山', '公塚', '俱樂部', '同邑', '八邑', '客屬'],
+            step2_regions: ['福建', '廣東', '廣肇', '客屬', '潮州', '瓊州', '惠州', '安溪', '永春', '嘉應', '廣西', '兩廣'],
+            minnan_counties: ['福建', '漳州', '泉州', '漳泉', '永春', '安溪', '晉江', '興安', '詔安', '龍巖'],
+            guangfu_counties: ['廣東', '廣肇', '番禺', '南海', '順德', '台山', '甯陽', '香山', '中山', '清遠', '四邑', '岡州'],
+            hakka_counties: ['客屬', '嘉應', '茶陽', '大埔', '惠州', '汀州', '增龍', '應和', '永定', '海陸'],
+            custom: ['會館', '廟', '義山', '學校']
+        };
+
+        let currentKeywords = [...KEYWORD_PRESETS.step1_orgs];
+
+        // 2. 初始化繁簡轉換引擎
+        function initOpenCC() {
+            try {
+                if (typeof OpenCC !== 'undefined' && OpenCC.Converter) {
+                    s2tConverter = OpenCC.Converter({ from: 'cn', to: 'tw' });
+                    t2sConverter = OpenCC.Converter({ from: 'tw', to: 'cn' });
+                    const badge = document.getElementById('opencc-status');
+                    if (badge) badge.style.display = 'inline-flex';
+                } else {
+                    notifyMissingLib('opencc-js', '繁簡雙向轉換模組未正確加載，將回退至純字串匹配。');
+                }
+            } catch (e) {
+                console.error("OpenCC init error:", e);
+                notifyMissingLib('opencc-js', '繁簡雙向轉換初始化失敗: ' + e.message);
+            }
+        }
+
+        function notifyMissingLib(libName, detail) {
+            window.libErrors.push({
+                lib: libName,
+                src: libName,
+                feature: detail
+            });
+            renderLibErrors();
+        }
+
+        // 繁簡輔助搜尋：若包含繁簡轉換，檢查文字是否在原文、繁體版或簡體版中出現
+        function matchesKeyword(text, keyword) {
+            if (!text || !keyword) return false;
+            const kw = keyword.trim().toLowerCase();
+            const target = text.toLowerCase();
+
+            // 直接匹配
+            if (target.includes(kw)) return true;
+
+            // 若有 OpenCC，比對轉換形式
+            if (s2tConverter && t2sConverter) {
+                const kw_t = s2tConverter(kw).toLowerCase();
+                const kw_s = t2sConverter(kw).toLowerCase();
+                const target_t = s2tConverter(target).toLowerCase();
+                const target_s = t2sConverter(target).toLowerCase();
+
+                if (target_t.includes(kw_t) || target_s.includes(kw_s) || target.includes(kw_t) || target.includes(kw_s)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // 輕量級 YAML 解析器回退備援方案（專為純資料清單格式設計，即使 CDN 故障也能 100% 成功解析）
+        function parseYamlFallback(yamlText) {
+            const lines = yamlText.split(/\r?\n/);
+            const items = [];
+            let curr = null;
+            let currentKey = null;
+
+            for (let i = 0; i < lines.length; i++) {
+                const rawLine = lines[i];
+                const trimmed = rawLine.trim();
+
+                // 跳過空行或純註解行
+                if (!trimmed || trimmed.startsWith('#')) continue;
+
+                if (trimmed.startsWith('- nanyangSiteId:')) {
+                    if (curr) items.push(curr);
+                    const val = trimmed.replace('- nanyangSiteId:', '').trim().replace(/^['"]|['"]$/g, '');
+                    curr = { nanyangSiteId: val };
+                    currentKey = 'nanyangSiteId';
+                } else if (curr && trimmed.includes(':') && !rawLine.startsWith('  ') && !rawLine.startsWith('\t')) {
+                    const colonIdx = trimmed.indexOf(':');
+                    const k = trimmed.slice(0, colonIdx).trim();
+                    const v = trimmed.slice(colonIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+                    curr[k] = v;
+                    currentKey = k;
+                } else if (curr && (rawLine.startsWith('    ') || rawLine.startsWith('  '))) {
+                    // 多行文字（如地址或備註的換行接續）
+                    if (currentKey && curr[currentKey]) {
+                        curr[currentKey] += ' ' + trimmed.replace(/^['"]|['"]$/g, '');
+                    }
+                }
+            }
+            if (curr) items.push(curr);
+            return items;
+        }
+
+        // 3. 同步載入 CSV 與 YAML
+        async function loadDatasets() {
+            const loadingBadge = document.getElementById('loading-badge');
+            
+            // 檢查必要 CSV 解析庫
+            if (typeof Papa === 'undefined') {
+                notifyMissingLib('papaparse', 'CSV 解析庫未載入，無法讀取 01-franke_malaysia.csv');
+                if (loadingBadge) loadingBadge.innerText = '❌ CSV 解析庫載入失敗';
+                return;
+            }
+
+            try {
+                // 平行讀取兩檔案
+                const [csvRes, yamlRes] = await Promise.all([
+                    fetch('01-franke_malaysia.csv'),
+                    fetch('01-franke_malaysia.yaml')
+                ]);
+
+                if (!csvRes.ok) throw new Error(`讀取 01-franke_malaysia.csv 失敗 (${csvRes.status})`);
+                if (!yamlRes.ok) throw new Error(`讀取 01-franke_malaysia.yaml 失敗 (${yamlRes.status})`);
+
+                const csvText = await csvRes.text();
+                const yamlText = await yamlRes.text();
+
+                // 解析 CSV
+                const parsedCSV = Papa.parse(csvText, {
+                    header: true,
+                    skipEmptyLines: true,
+                    dynamicTyping: true
+                });
+                rawCSV = parsedCSV.data;
+
+                // 解析 YAML：優先使用 jsyaml，若載入異常則無縫切換備援解析
+                let parsedYAML = null;
+                const yamlParser = (typeof jsyaml !== 'undefined' && jsyaml.load) ? jsyaml : (typeof window.jsyaml !== 'undefined' ? window.jsyaml : null);
+                
+                if (yamlParser && yamlParser.load) {
+                    try {
+                        parsedYAML = yamlParser.load(yamlText);
+                    } catch (yErr) {
+                        console.warn("jsyaml.load 解析失敗，啟用備援解析器:", yErr);
+                        parsedYAML = parseYamlFallback(yamlText);
+                    }
+                } else {
+                    console.warn("未檢測到全域 jsyaml，啟用純原生 JavaScript 備援解析器");
+                    parsedYAML = parseYamlFallback(yamlText);
+                }
+
+                rawYAML = {};
+                if (Array.isArray(parsedYAML)) {
+                    parsedYAML.forEach(item => {
+                        if (item && item.nanyangSiteId) {
+                            rawYAML[item.nanyangSiteId] = item;
+                        }
+                    });
+                }
+
+                // 關聯兩份資料
+                mergedSites = rawCSV.map(row => {
+                    const extra = rawYAML[row.nanyangSiteId] || {};
+                    return {
+                        ...row,
+                        FrankeNo: extra.FrankeNo || '',
+                        dateISO: extra.dateISO || '',
+                        dateRef: extra.dateRef || '',
+                        address: extra.address || '',
+                        notes: extra.notes || ''
+                    };
+                });
+
+                if (loadingBadge) {
+                    const yamlCount = Object.keys(rawYAML).length;
+                    loadingBadge.innerText = `✅ 成功關聯 ${mergedSites.length} 筆點位（CSV: ${rawCSV.length} 筆，YAML: ${yamlCount} 筆）`;
+                    loadingBadge.style.background = '#dcfce7';
+                    loadingBadge.style.color = '#15803d';
+                }
+
+                updateStats();
+                renderAllCharts();
+
+            } catch (err) {
+                console.error("載入資料集發生錯誤:", err);
+                if (loadingBadge) {
+                    loadingBadge.innerText = '❌ 資料載入失敗: ' + err.message;
+                    loadingBadge.style.background = '#fee2e2';
+                    loadingBadge.style.color = '#b91c1c';
+                }
+            }
+        }
+
+        // 4. 更新概覽統計數字
+        function updateStats() {
+            document.getElementById('stat-total-sites').innerText = mergedSites.length;
+            const geocoded = mergedSites.filter(s => s.latitude && s.longitude).length;
+            document.getElementById('stat-geocoded').innerText = geocoded;
+
+            const dated = mergedSites.filter(s => {
+                const d = String(s.dateISO || '').trim();
+                return /\b(1[4-9]\d{2}|20\d{2})\b/.test(d);
+            }).length;
+            document.getElementById('stat-dated').innerText = dated;
+        }
+
+        // 5. 關鍵字標籤渲染與計數計算
+        function calculateKeywordCounts() {
+            const counts = {};
+            currentKeywords.forEach(kw => { counts[kw] = 0; });
+
+            const matchedSet = new Set();
+
+            mergedSites.forEach(site => {
+                const combinedText = `${site.siteNameZh || ''} ${site.siteNameAlt1 || ''} ${site.notes || ''}`;
+                let matchedAny = false;
+
+                currentKeywords.forEach(kw => {
+                    if (matchesKeyword(combinedText, kw)) {
+                        counts[kw]++;
+                        matchedAny = true;
+                    }
+                });
+
+                if (matchedAny) {
+                    matchedSet.add(site);
+                }
+            });
+
+            // 更新標籤介面
+            const container = document.getElementById('kw-tags-container');
+            container.innerHTML = '';
+            currentKeywords.forEach(kw => {
+                const tag = document.createElement('span');
+                tag.className = 'kw-tag';
+                tag.innerHTML = `
+                    <span>${kw}</span>
+                    <span class="count">${counts[kw]}</span>
+                    <span class="del-btn" title="刪除此關鍵字" onclick="removeKeyword('${kw}')">&times;</span>
+                `;
+                container.appendChild(tag);
+            });
+
+            // 更新預覽清單與篩選計數
+            document.getElementById('stat-filter-matches').innerText = matchedSet.size;
+            document.getElementById('matched-count-text').innerText = matchedSet.size;
+
+            const previewBox = document.getElementById('matched-sites-list');
+            if (matchedSet.size === 0) {
+                previewBox.innerHTML = '<div style="color: #94a3b8;">目前沒有符合任一關鍵字的點位。</div>';
+            } else {
+                let html = '';
+                Array.from(matchedSet).slice(0, 100).forEach(s => {
+                    const yearInfo = s.dateISO ? `（最早銘刻年代：${s.dateISO}）` : '（年代未詳）';
+                    html += `
+                        <div class="matched-item">
+                            <strong>${s.nanyangSiteId}</strong>: <span style="font-weight: 600; color: #1e3a8a;">${s.siteNameZh || '（無中文名）'}</span>
+                            <span style="color: #64748b;">${s.siteNameAlt1 ? ' / ' + s.siteNameAlt1 : ''}</span>
+                            <span style="color: #0284c7; font-size: 0.8rem;">${yearInfo}</span>
+                        </div>
+                    `;
+                });
+                if (matchedSet.size > 100) {
+                    html += `<div style="text-align: center; color: #94a3b8; padding: 6px;">...還有 ${matchedSet.size - 100} 處未列出</div>`;
+                }
+                previewBox.innerHTML = html;
+            }
+
+            return counts;
+        }
+
+        // 6. 圖表一：關鍵字長條圖
+        function renderKeywordChart() {
+            if (typeof Chart === 'undefined') {
+                notifyMissingLib('chart.js', 'Chart.js 未載入，無法呈現關鍵字長條圖');
+                return;
+            }
+
+            const counts = calculateKeywordCounts();
+            const labels = currentKeywords;
+            const values = labels.map(k => counts[k]);
+
+            const ctx = document.getElementById('keywordBarChart').getContext('2d');
+            if (chartKeywords) {
+                chartKeywords.data.labels = labels;
+                chartKeywords.data.datasets[0].data = values;
+                chartKeywords.update();
+            } else {
+                chartKeywords = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '符合點位數量',
+                            data: values,
+                            backgroundColor: '#2563eb',
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => ` 符合數量: ${ctx.raw} 處`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { autoSkip: false, maxRotation: 45, minRotation: 0 }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: '點位數量 (處)' },
+                                ticks: { precision: 0 }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // 7. 圖表二：重現點位類型圖
+        function renderTypeChart() {
+            if (typeof Chart === 'undefined') return;
+
+            const typeCounts = {
+                '寺廟與宗教場所': 0,
+                '墓葬與義山': 0,
+                '會館、宗祠與行會': 0,
+                '學校與文教': 0,
+                '其他歷史設施': 0
+            };
+
+            mergedSites.forEach(s => {
+                const full = `${s.siteNameZh || ''} ${s.siteNameAlt1 || ''}`.toLowerCase();
+                if (['義山', '公塚', '墓', '塚', '墳', '碑', 'cemetery', 'tombstone', 'grave', 'memorial'].some(k => full.includes(k))) {
+                    typeCounts['墓葬與義山']++;
+                } else if (['廟', '宮', '寺', '庵', '堂', '亭', '巖', '院', '洞', '壇', '佛', '道', '閣', 'temple', 'monastery', 'shrine', 'pagoda', 'ch\'an-ssu', 'pi-an', 'lin'].some(k => full.includes(k))) {
+                    typeCounts['寺廟與宗教場所']++;
+                } else if (['會館', '公所', '宗祠', '家廟', '同鄉', '工會', '公會', '總會', '社', 'landsmannschaft', 'guild', 'lineage', 'clan', 'association', 'society'].some(k => full.includes(k))) {
+                    typeCounts['會館、宗祠與行會']++;
+                } else if (['學校', '公學', '中學', '小學', '書院', 'school', 'college', 'academy', 'education'].some(k => full.includes(k))) {
+                    typeCounts['學校與文教']++;
+                } else {
+                    typeCounts['其他歷史設施']++;
+                }
+            });
+
+            const labels = Object.keys(typeCounts);
+            const values = Object.values(typeCounts);
+
+            const ctx = document.getElementById('typeChart').getContext('2d');
+            if (chartTypes) {
+                chartTypes.update();
+            } else {
+                chartTypes = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '點位數量',
+                            data: values,
+                            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#64748b'],
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => ` 數量: ${ctx.raw} 處 (${(ctx.raw / mergedSites.length * 100).toFixed(1)}%)`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: '點位數量 (處)' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // 8. 圖表三：重現年代分佈圖
+        function renderPeriodChart() {
+            if (typeof Chart === 'undefined') return;
+
+            const periods = {
+                '1800年以前': 0,
+                '1800-1849 (19世紀上半)': 0,
+                '1850-1899 (19世紀下半)': 0,
+                '1900-1949 (20世紀上半)': 0,
+                '1950年以後': 0
+            };
+
+            let validDatedCount = 0;
+            mergedSites.forEach(s => {
+                const dateStr = String(s.dateISO || '').trim();
+                const m = dateStr.match(/\b(1[4-9]\d{2}|20\d{2})\b/);
+                if (m) {
+                    const y = parseInt(m[1], 10);
+                    validDatedCount++;
+                    if (y < 1800) periods['1800年以前']++;
+                    else if (y < 1850) periods['1800-1849 (19世紀上半)']++;
+                    else if (y < 1900) periods['1850-1899 (19世紀下半)']++;
+                    else if (y < 1950) periods['1900-1949 (20世紀上半)']++;
+                    else periods['1950年以後']++;
+                }
+            });
+
+            const labels = Object.keys(periods);
+            const values = Object.values(periods);
+
+            const ctx = document.getElementById('periodChart').getContext('2d');
+            if (chartPeriods) {
+                chartPeriods.update();
+            } else {
+                chartPeriods = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '點位數量',
+                            data: values,
+                            backgroundColor: '#6366f1',
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => ` 數量: ${ctx.raw} 處 (${(ctx.raw / validDatedCount * 100).toFixed(1)}%)`
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: { display: true, text: '點位數量 (處)' }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderAllCharts() {
+            renderKeywordChart();
+            renderTypeChart();
+            renderPeriodChart();
+        }
+
+        // 9. 關鍵字操作方法
+        function addKeyword() {
+            const input = document.getElementById('new-kw-input');
+            const kw = input.value.trim();
+            if (!kw) return;
+            if (currentKeywords.includes(kw)) {
+                alert(`關鍵字「${kw}」已存在於清單中`);
+                return;
+            }
+            currentKeywords.push(kw);
+            input.value = '';
+            renderKeywordChart();
+        }
+
+        function removeKeyword(kw) {
+            currentKeywords = currentKeywords.filter(k => k !== kw);
+            renderKeywordChart();
+        }
+
+        function switchKeywordPreset() {
+            const select = document.getElementById('group-preset-select');
+            const val = select.value;
+            if (KEYWORD_PRESETS[val]) {
+                currentKeywords = [...KEYWORD_PRESETS[val]];
+                renderKeywordChart();
+            }
+        }
+
+        function resetCurrentGroup() {
+            const select = document.getElementById('group-preset-select');
+            const val = select.value;
+            if (KEYWORD_PRESETS[val]) {
+                currentKeywords = [...KEYWORD_PRESETS[val]];
+            } else {
+                currentKeywords = [...KEYWORD_PRESETS.step1_orgs];
+            }
+            renderKeywordChart();
+        }
+
+        // 啟動入口
+        window.addEventListener('DOMContentLoaded', () => {
+            initOpenCC();
+            loadDatasets();
+        });
+    </script>
+</body>
+</html>
